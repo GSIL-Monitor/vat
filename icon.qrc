@@ -1,0 +1,10 @@
+<RCC>
+  <qresource prefix="icon">
+    <file>resource/gui/play.ico</file>
+    <file>resource/gui/stop.ico</file>
+    <file>resource/gui/report.ico</file>
+    <file>resource/gui/help.ico</file>
+    <file>resource/gui/exit.ico</file>
+    <file>resource/gui/vat.ico</file>
+  </qresource>
+</RCC>
