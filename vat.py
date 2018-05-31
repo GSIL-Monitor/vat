@@ -33,6 +33,9 @@ from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtWidgets import QFileDialog
 from vatgui import Ui_MainWindow
 
+import ctypes
+ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("myappid")  # 设置任务栏图标
+
 __version__ = "0.0.0.1"
 VAR_SEPARATOR = '\\'
 VAR_EXCEL_REPORT_NAME = 'MTBF_Test_Report'
@@ -155,6 +158,7 @@ class RunThread(QThread):
         self.pipe = None
         self.report = None
         self.python_path = None
+        self.config = GetConfig
 
     def get_python_path(self):
         config = GetConfig()
@@ -233,9 +237,9 @@ class RunThread(QThread):
             if self.stop_flag is True:
                 break
             case_creator.loop_current = current_loop
-            self.write_log(case_creator.case_log + VAR_LOG_FILE_SUFFIX, "{0} count: {1} {2}".format('-'*20,
-                                                                                                    current_loop + 1,
-                                                                                                    '-'*20))
+            text = "{0} round: {1} count: {2} {3}".format('-'*20, case_creator.round_ + 1, current_loop + 1, '-'*20)
+            self.write_log(case_creator.case_log + VAR_LOG_FILE_SUFFIX, text)
+            print(text)
 
             self.pipe = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
             while self.pipe.poll() is None:
@@ -353,7 +357,7 @@ class VatWindow(QMainWindow, Ui_MainWindow):
         self.actionRun.triggered.connect(self.run_test)
         self.actionStop.triggered.connect(self.stop_test)
         self.actionAdd.triggered.connect(self.add_test_case_list)
-        self.thread.signal_test_finish.connect(self.stop_test)
+        self.thread.signal_test_finish.connect(self.finish_test)
         self.actionReport.triggered.connect(self.open_report_folder)
         self.case_list.clicked.connect(self.case_tree_click)
         self.case_list.expanded.connect(self.case_tree_click)
@@ -438,8 +442,12 @@ class VatWindow(QMainWindow, Ui_MainWindow):
         self.thread.start()
 
     def stop_test(self):
-        self.control_status(run=False)
+        # self.control_status(run=False)
+        self.actionStop.setEnabled(False)
         self.thread.stop()
+
+    def finish_test(self):
+        self.control_status(run=False)
 
     def control_status(self, run=True):
         self.actionRun.setEnabled(not run)

@@ -18,7 +18,7 @@ WIFI_PASSWORD = "wacval2017" # wifi password
 
 
 def get_file_name():
-    return getattr(sys.modules['__main__'], '__file__', None).split('/')[-1]
+    return getattr(sys.modules['__main__'], '__file__', None).split('\\')[-1]
 
 
 def create_logger(name):
@@ -37,6 +37,7 @@ def create_logger(name):
     # logger.addHandler(console_handle)
 
     return logger
+
 
 log = create_logger(__name__)
 
