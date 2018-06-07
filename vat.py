@@ -158,7 +158,7 @@ class RunThread(QThread):
         self.pipe = None
         self.report = None
         self.python_path = None
-        self.config = GetConfig
+        # self.config = GetConfig
 
     def get_python_path(self):
         config = GetConfig()
@@ -331,7 +331,7 @@ class VatWindow(QMainWindow, Ui_MainWindow):
         self.setupUi(self)
         self.run_case_list = set()
         self.thread = RunThread()
-        self.config_ = GetConfig()
+        # self.config_ = GetConfig()
         self.table_model = QStandardItemModel(self.tableViewCaseRunDetail)
 
         # gui initial
@@ -378,11 +378,12 @@ class VatWindow(QMainWindow, Ui_MainWindow):
         file, file_type = QFileDialog.getOpenFileName(self, "Select Python File", "C:\\", "Files(*.exe);;All Files(*)")
         print(file)
         if file:
-            # config = GetConfig()
-            self.config_.set_str(VAR_CONFIG_SECTION_CONFIG, VAR_CONFIG_ITEM_PYTHON, file)
+            config = GetConfig()
+            config.set_str(VAR_CONFIG_SECTION_CONFIG, VAR_CONFIG_ITEM_PYTHON, file)
 
     def get_case_path(self):
-        path = self.config_.get_str(VAR_CONFIG_SECTION_CONFIG, VAR_CONFIG_ITEM_CASE)
+        config = GetConfig()
+        path = config.get_str(VAR_CONFIG_SECTION_CONFIG, VAR_CONFIG_ITEM_CASE)
         if path:
             path = str(path).replace("/", VAR_SEPARATOR)
             if not path.endswith(VAR_SEPARATOR):
@@ -392,7 +393,8 @@ class VatWindow(QMainWindow, Ui_MainWindow):
         return path
 
     def set_case_path(self):
-        default_case_path = self.config_.get_str(VAR_CONFIG_SECTION_CONFIG, VAR_CONFIG_ITEM_CASE)
+        config = GetConfig()
+        default_case_path = config.get_str(VAR_CONFIG_SECTION_CONFIG, VAR_CONFIG_ITEM_CASE)
         if not default_case_path:
             default_case_path = VAR_CURRENT_PATH
 
@@ -406,7 +408,12 @@ class VatWindow(QMainWindow, Ui_MainWindow):
             self.model.setHorizontalHeaderLabels(["Test Case"])
             self.case_list.setModel(self.model)
             self.create_tree(self.model, self.case_path)
-            self.config_.set_str("Config", VAR_CONFIG_ITEM_CASE, path)
+            config.set_str("Config", VAR_CONFIG_ITEM_CASE, path)
+
+        self.clear_case_list()
+
+    def clear_case_list(self):
+        self.run_case_list.clear()
 
     def init_run_case_detail(self):
         head_list = ['Name', 'Result', 'Fail', 'Success Rate', 'Loop', 'Time', 'Status']
