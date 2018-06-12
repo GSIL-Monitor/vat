@@ -6,6 +6,7 @@ import datetime
 import shutil
 import time
 import logging
+import codecs
 
 try:
     from openpyxl import load_workbook
@@ -25,18 +26,21 @@ from PyQt5.QtGui import QStandardItemModel
 from PyQt5.QtGui import QStandardItem
 from PyQt5.QtGui import QTextCursor
 from PyQt5.QtGui import QDesktopServices
+from PyQt5.QtGui import QTextOption
 from PyQt5.QtCore import QUrl
 from PyQt5.QtCore import Qt
 from PyQt5.QtCore import QThread
 from PyQt5.QtCore import QObject
 from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtWidgets import QFileDialog
+from PyQt5.QtWidgets import QMessageBox
+from PyQt5.QtCore import QCoreApplication
 from vatgui import Ui_MainWindow
 
 import ctypes
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("myappid")  # 设置任务栏图标
 
-__version__ = "0.0.0.1"
+__version__ = "0.0.0.2"
 VAR_SEPARATOR = '\\'
 VAR_EXCEL_REPORT_NAME = 'MTBF_Test_Report'
 VAR_EXCEL_SUFFIX = '.xlsx'
@@ -60,6 +64,8 @@ VAR_DEFAULT_IMAGE_SUFFIX = '.jpg'
 VAR_CONFIG_ITEM_CASE = 'case'
 VAR_CONFIG_ITEM_PYTHON = 'python'
 VAR_CONFIG_SECTION_CONFIG = 'Config'
+VAR_CONFIG_PATH = "{0}{1}{2}{3}{4}".format(VAR_CURRENT_PATH, VAR_FOLDER_CONFIGURE, VAR_SEPARATOR, VAR_FOLDER_CONFIGURE,
+                                           VAR_CONFIGURE_SUFFIX)
 
 
 # Unused current
@@ -107,6 +113,9 @@ class GetConfig(object):
         self.config.set(section, key, value)
         self.config.write(open(self.config_path, 'w'))
 
+    def get_object(self):
+        return self.config
+
 
 class CaseCreator(object):
     def __init__(self, case_name):
@@ -123,6 +132,7 @@ class CaseCreator(object):
         self.count_fail = 0
         self.count_success = 0
         self.round_ = 0
+        self.round_total = 0
         self.case_index = 0
         self.case_log = None
 
@@ -150,6 +160,7 @@ class Report(object):
 
 class RunThread(QThread):
     signal_test_finish = pyqtSignal()
+    signal_case_info_update = pyqtSignal(CaseCreator)
 
     def __init__(self, parent=None):
         super(RunThread, self).__init__(parent)
@@ -215,7 +226,9 @@ class RunThread(QThread):
         config = GetConfig()
         for case in self.case_list:
             case_name = (case.split(VAR_SEPARATOR)[-1]).split('.')[0]
-            case_loop = config.get_int('Loop', case_name, 100)
+            case_loop = config.get_int('Loop', case_name)
+            if not case_loop:
+                case_loop = config.get_int("Loop", 'default_loop')
             self.performance_signal_case(case, case_loop, round_, self.case_list.index(case))
             self.detail_report_row += 1
 
@@ -225,11 +238,25 @@ class RunThread(QThread):
         case_creator.case_index = case_index
         case_creator.loop_total = loop
         case_creator.time_start = datetime.datetime.now()
-        case_creator.case_log = "{0}{1}Log{2}Round_{3}_{4}".format(self.report_folder_path,
-                                                                   VAR_SEPARATOR,
-                                                                   VAR_SEPARATOR,
-                                                                   str(case_creator.round_),
-                                                                   str(case_creator.case_name).split('.')[0])
+        case_creator.case_log_folder = "{0}{1}Log{2}Round_{3}_{4}".format(
+            self.report_folder_path,
+            VAR_SEPARATOR,
+            VAR_SEPARATOR,
+            str(case_creator.round_ + 1),
+            str(case_creator.case_name).split('.')[0]
+        )
+        self.create_folder(case_creator.case_log_folder)
+        case_creator.case_log = "{0}{1}Log{2}Round_{3}_{4}{5}Round_{6}_{7}".format(
+            self.report_folder_path,
+            VAR_SEPARATOR,
+            VAR_SEPARATOR,
+            str(case_creator.round_ + 1),
+            str(case_creator.case_name).split('.')[0],
+            VAR_SEPARATOR,
+            str(case_creator.round_ + 1),
+            str(case_creator.case_name).split('.')[0]
+        )
+
         log_content = ""
         command = self.python_path + " " + case
 
@@ -237,6 +264,7 @@ class RunThread(QThread):
             if self.stop_flag is True:
                 break
             case_creator.loop_current = current_loop
+            self.signal_case_info_update.emit(case_creator)
             text = "{0} round: {1} count: {2} {3}".format('-'*20, case_creator.round_ + 1, current_loop + 1, '-'*20)
             self.write_log(case_creator.case_log + VAR_LOG_FILE_SUFFIX, text)
             print(text)
@@ -269,6 +297,7 @@ class RunThread(QThread):
             self.write_report(case_creator)
             self.write_log(case_creator.case_log + VAR_LOG_FILE_SUFFIX, log_content)
             log_content = ""  # clear log if test finished
+            self.signal_case_info_update.emit(case_creator)
 
     @classmethod
     def write_log(cls, file, text):
@@ -287,12 +316,12 @@ class RunThread(QThread):
 
         # write value to sheet completion
         self.report.write_completion(sheet_completion_row, VAR_COMPLETION_START_COLUMN, case_creator.case_name)
-        self.report.write_completion(sheet_completion_row, VAR_COMPLETION_START_COLUMN + 1, case_creator.loop_current)
+        self.report.write_completion(sheet_completion_row, VAR_COMPLETION_START_COLUMN + 1, case_creator.loop_total)
         self.report.write_completion(sheet_completion_row, VAR_COMPLETION_START_COLUMN + 2 + case_creator.round_,
                                      case_creator.count_success)
 
         # write value to sheet detail
-        self.report.write_detail(row=self.detail_report_row, column=1, value=case_creator.round_)
+        self.report.write_detail(row=self.detail_report_row, column=1, value=case_creator.round_ + 1)
         self.report.write_detail(row=self.detail_report_row, column=2, value=case_creator.case_name)
         self.report.write_detail(row=self.detail_report_row, column=3, value=case_creator.duration)
         self.report.write_detail(row=self.detail_report_row, column=4, value=case_creator.count_success)
@@ -329,13 +358,15 @@ class VatWindow(QMainWindow, Ui_MainWindow):
         QMainWindow.__init__(self)
         Ui_MainWindow.__init__(self)
         self.setupUi(self)
-        self.run_case_list = set()
+        self.run_case_list = list()
         self.thread = RunThread()
         # self.config_ = GetConfig()
         self.table_model = QStandardItemModel(self.tableViewCaseRunDetail)
 
         # gui initial
         self.actionStop.setEnabled(False)
+        self.textEditLog.setReadOnly(True)
+        self.textEditLog.setWordWrapMode(QTextOption.NoWrap)
         # gui initial end
 
         # case list treeview control setting
@@ -357,14 +388,47 @@ class VatWindow(QMainWindow, Ui_MainWindow):
         self.actionRun.triggered.connect(self.run_test)
         self.actionStop.triggered.connect(self.stop_test)
         self.actionAdd.triggered.connect(self.add_test_case_list)
+        self.actionSetting.triggered.connect(self.setting_config)
         self.thread.signal_test_finish.connect(self.finish_test)
         self.actionReport.triggered.connect(self.open_report_folder)
         self.case_list.clicked.connect(self.case_tree_click)
         self.case_list.expanded.connect(self.case_tree_click)
+        self.actionSave_2.triggered.connect(self.save_config)
+        self.actionAbout.triggered.connect(self.about)
+        self.actionExit.triggered.connect(self.exit_window)
+        self.thread.signal_case_info_update.connect(self.case_status_update)
         # signal end
 
         sys.stdout = EmittingStream(text_written=self.output_written)
         sys.stderr = EmittingStream(text_written=self.output_written)
+
+    def case_status_update(self, case_creator):
+        status_loop = "{0}/{1}".format(case_creator.loop_current + 1, case_creator.loop_total)
+        status_round = "{0}".format(case_creator.round_ + 1)
+        self.table_model.setItem(case_creator.case_index, 1, QStandardItem(status_round))
+        self.table_model.setItem(case_creator.case_index, 2, QStandardItem(status_loop))
+        pass
+
+    def exit_window(self):
+        result = QMessageBox.question(self, "Exit", "Quit?", QMessageBox.Yes | QMessageBox.No)
+        if result == QMessageBox.Yes:
+            QCoreApplication.instance().quit()
+
+    def about(self):
+        text = "version: {0}\nJRD COMMUNICATION Inc Copyright(c)2018\n".format(__version__)
+        QMessageBox.about(self, "About", text)
+
+    def save_config(self):
+        to_save_content = self.textEditConfig.toPlainText()
+        # print(to_save_content)
+        config = codecs.open(VAR_CONFIG_PATH, 'w', 'utf-8')
+        config.write(to_save_content)
+        pass
+
+    def setting_config(self):
+        self.tabWidget.setCurrentIndex(1)
+        config_content = codecs.open(VAR_CONFIG_PATH, 'r', 'utf-8').read()
+        self.textEditConfig.setPlainText(config_content)
 
     def case_tree_click(self, index):
         self.case_list.resizeColumnToContents(0)
@@ -400,7 +464,7 @@ class VatWindow(QMainWindow, Ui_MainWindow):
 
         path = QFileDialog.getExistingDirectory(self, "Select Case Folder", default_case_path)
         if path:
-            path = str(path).replace("/", "\\")
+            path = str(path).replace("/", VAR_SEPARATOR)
             if not str(path).endswith(VAR_SEPARATOR):
                 path += VAR_SEPARATOR
             self.case_path = path
@@ -416,7 +480,7 @@ class VatWindow(QMainWindow, Ui_MainWindow):
         self.run_case_list.clear()
 
     def init_run_case_detail(self):
-        head_list = ['Name', 'Result', 'Fail', 'Success Rate', 'Loop', 'Time', 'Status']
+        head_list = ['Name', 'Round', 'Loop', 'Time', 'Result', 'Success Rate', 'Status']
         self.table_model.setHorizontalHeaderLabels(head_list)
         self.tableViewCaseRunDetail.setModel(self.table_model)
 
@@ -445,7 +509,7 @@ class VatWindow(QMainWindow, Ui_MainWindow):
     def run_test(self):
         self.control_status()
         self.clear_log()
-        self.thread.case_list = list(self.run_case_list)
+        self.thread.case_list = self.run_case_list
         self.thread.start()
 
     def stop_test(self):
@@ -460,6 +524,12 @@ class VatWindow(QMainWindow, Ui_MainWindow):
         self.actionRun.setEnabled(not run)
         self.actionStop.setEnabled(run)
         self.case_list.setEnabled(not run)
+        self.actionOpen.setEnabled(not run)
+        self.actionSave_2.setEnabled(not run)
+        self.actionSetting.setEnabled(not run)
+        self.actionPython.setEnabled(not run)
+        self.actionReport.setEnabled(not run)
+        self.actionExit.setEnabled(not run)
 
     def output_written(self, text):
         cursor = self.textEditLog.textCursor()
@@ -483,13 +553,15 @@ class VatWindow(QMainWindow, Ui_MainWindow):
                 self.tree_item_check_child_changed(item)
                 self.add_to_run_case_list(item)
 
-        print(self.run_case_list)
-
     def add_to_run_case_list(self, item):
         full_path_case = self.case_path + self.get_all_parent(item)
         if item.checkState() == Qt.Checked:
-            self.run_case_list.add(full_path_case)
+            if full_path_case not in self.run_case_list and not os.path.isdir(full_path_case):
+                self.run_case_list.append(full_path_case)
+                row_case_name = str(full_path_case).split(VAR_SEPARATOR)[-1]
+                self.table_model.setItem(self.run_case_list.index(full_path_case), 0, QStandardItem(row_case_name))
         elif full_path_case in self.run_case_list:
+            self.table_model.removeRow(self.run_case_list.index(full_path_case))
             self.run_case_list.remove(full_path_case)
 
     def get_all_parent(self, item):
@@ -571,7 +643,7 @@ class VatWindow(QMainWindow, Ui_MainWindow):
                 parent.appendRow(child_folder)
                 self.create_tree(child_folder, current_path)
             else:
-                if file.__contains__("__init__") or file.endswith("pyc"):
+                if file.__contains__("__init__") or not file.endswith(".py"):
                     continue
                 child_file = QStandardItem(file)
                 child_file.setCheckable(True)
