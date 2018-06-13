@@ -40,7 +40,7 @@ from vatgui import Ui_MainWindow
 import ctypes
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("myappid")  # 设置任务栏图标
 
-__version__ = "0.0.0.2"
+__version__ = "1.0.0.2"
 VAR_SEPARATOR = '\\'
 VAR_EXCEL_REPORT_NAME = 'MTBF_Test_Report'
 VAR_EXCEL_SUFFIX = '.xlsx'
@@ -93,9 +93,9 @@ def save_image(name):
 class GetConfig(object):
     def __init__(self):
         self.config = ConfigParser()
-        self.config_path = "{0}{1}{2}{3}{4}".format(VAR_CURRENT_PATH, VAR_FOLDER_CONFIGURE, VAR_SEPARATOR,
-                                                    VAR_FOLDER_CONFIGURE, VAR_CONFIGURE_SUFFIX)
-        self.config.read(self.config_path)
+        # self.config_path = "{0}{1}{2}{3}{4}".format(VAR_CURRENT_PATH, VAR_FOLDER_CONFIGURE, VAR_SEPARATOR,
+        #                                             VAR_FOLDER_CONFIGURE, VAR_CONFIGURE_SUFFIX)
+        self.config.read(VAR_CONFIG_PATH)
 
     def get_int(self, section, key, default=0):
         try:
@@ -111,7 +111,7 @@ class GetConfig(object):
 
     def set_str(self, section, key, value):
         self.config.set(section, key, value)
-        self.config.write(open(self.config_path, 'w'))
+        self.config.write(open(VAR_CONFIG_PATH, 'w'))
 
     def get_object(self):
         return self.config
@@ -360,72 +360,82 @@ class VatWindow(QMainWindow, Ui_MainWindow):
         self.setupUi(self)
         self.run_case_list = list()
         self.thread = RunThread()
-        # self.config_ = GetConfig()
         self.table_model = QStandardItemModel(self.tableViewCaseRunDetail)
-
-        # gui initial
-        self.actionStop.setEnabled(False)
-        self.textEditLog.setReadOnly(True)
-        self.textEditLog.setWordWrapMode(QTextOption.NoWrap)
-        # gui initial end
-
-        # case list treeview control setting
-        self.case_path = self.get_case_path()
         self.model = QStandardItemModel()
-        self.model.setHorizontalHeaderLabels(["Test Case"])
-        self.case_list.setModel(self.model)
-        self.create_tree(self.model, self.case_path)
-        # case list treeview control setting
 
-        # init table view
-        self.init_run_case_detail()
-        # init table view end
+        # initial ui
+        self.init_ui()
 
-        # signal
-        self.model.itemChanged.connect(self.check_tree_change)
-        self.actionOpen.triggered.connect(self.set_case_path)
-        self.actionPython.triggered.connect(self.set_python_path)
-        self.actionRun.triggered.connect(self.run_test)
-        self.actionStop.triggered.connect(self.stop_test)
-        self.actionAdd.triggered.connect(self.add_test_case_list)
-        self.actionSetting.triggered.connect(self.setting_config)
-        self.thread.signal_test_finish.connect(self.finish_test)
-        self.actionReport.triggered.connect(self.open_report_folder)
-        self.case_list.clicked.connect(self.case_tree_click)
-        self.case_list.expanded.connect(self.case_tree_click)
-        self.actionSave_2.triggered.connect(self.save_config)
-        self.actionAbout.triggered.connect(self.about)
-        self.actionExit.triggered.connect(self.exit_window)
-        self.thread.signal_case_info_update.connect(self.case_status_update)
-        # signal end
+        # initial treeview
+        self.init_treeview()
+
+        # initial table view
+        self.init_case_status()
+
+        # initial signal
+        self.init_signal()
 
         sys.stdout = EmittingStream(text_written=self.output_written)
         sys.stderr = EmittingStream(text_written=self.output_written)
 
-    def case_status_update(self, case_creator):
+    def init_treeview(self):
+        self.case_path = self.get_case_path()
+        self.update_tree_case(self.case_path)
+        # self.model.setHorizontalHeaderLabels(["Test Case"])
+        # self.case_list.setModel(self.model)
+
+    def init_signal(self):
+        self.model.itemChanged.connect(self.check_tree_change)
+        self.actionOpen.triggered.connect(self.action_open)
+        self.actionPython.triggered.connect(self.action_python)
+        self.actionRun.triggered.connect(self.action_run)
+        self.actionStop.triggered.connect(self.action_stop)
+        # self.actionAdd.triggered.connect(self.add_test_case_list)
+        self.actionSetting.triggered.connect(self.action_setting)
+        self.actionReport.triggered.connect(self.action_report)
+        self.actionSave_2.triggered.connect(self.action_save)
+        self.actionAbout.triggered.connect(self.action_about)
+        self.actionExit.triggered.connect(self.action_exit)
+        self.actionSynchronize.triggered.connect(self.action_synchronize)
+        self.case_list.clicked.connect(self.case_tree_click)
+        self.case_list.expanded.connect(self.case_tree_click)
+        self.thread.signal_test_finish.connect(self.finish_test)
+        self.thread.signal_case_info_update.connect(self.update_status)
+
+    def init_ui(self):
+        self.actionStop.setEnabled(False)
+        self.textEditLog.setReadOnly(True)
+        self.textEditLog.setWordWrapMode(QTextOption.NoWrap)
+
+    def action_synchronize(self):
+        case_path = self.get_case_path()
+        self.update_tree_case(case_path)
+        pass
+
+    def update_status(self, case_creator):
         status_loop = "{0}/{1}".format(case_creator.loop_current + 1, case_creator.loop_total)
         status_round = "{0}".format(case_creator.round_ + 1)
         self.table_model.setItem(case_creator.case_index, 1, QStandardItem(status_round))
         self.table_model.setItem(case_creator.case_index, 2, QStandardItem(status_loop))
         pass
 
-    def exit_window(self):
+    def action_exit(self):
         result = QMessageBox.question(self, "Exit", "Quit?", QMessageBox.Yes | QMessageBox.No)
         if result == QMessageBox.Yes:
             QCoreApplication.instance().quit()
 
-    def about(self):
-        text = "version: {0}\nJRD COMMUNICATION Inc Copyright(c)2018\n".format(__version__)
+    def action_about(self):
+        text = "Version: {0}\nJRD COMMUNICATION Inc Copyright(c)2018\n".format(__version__)
         QMessageBox.about(self, "About", text)
 
-    def save_config(self):
+    def action_save(self):
         to_save_content = self.textEditConfig.toPlainText()
         # print(to_save_content)
         config = codecs.open(VAR_CONFIG_PATH, 'w', 'utf-8')
         config.write(to_save_content)
         pass
 
-    def setting_config(self):
+    def action_setting(self):
         self.tabWidget.setCurrentIndex(1)
         config_content = codecs.open(VAR_CONFIG_PATH, 'r', 'utf-8').read()
         self.textEditConfig.setPlainText(config_content)
@@ -435,10 +445,10 @@ class VatWindow(QMainWindow, Ui_MainWindow):
         pass
 
     @classmethod
-    def open_report_folder(cls):
+    def action_report(cls):
         QDesktopServices.openUrl(QUrl.fromLocalFile(VAR_CURRENT_PATH + VAR_FOLDER_REPORT))
 
-    def set_python_path(self):
+    def action_python(self):
         file, file_type = QFileDialog.getOpenFileName(self, "Select Python File", "C:\\", "Files(*.exe);;All Files(*)")
         print(file)
         if file:
@@ -456,13 +466,29 @@ class VatWindow(QMainWindow, Ui_MainWindow):
             path = VAR_CURRENT_PATH + VAR_FOLDER_CASE + VAR_SEPARATOR
         return path
 
-    def set_case_path(self):
+    def action_open(self):
         config = GetConfig()
         default_case_path = config.get_str(VAR_CONFIG_SECTION_CONFIG, VAR_CONFIG_ITEM_CASE)
         if not default_case_path:
             default_case_path = VAR_CURRENT_PATH
 
         path = QFileDialog.getExistingDirectory(self, "Select Case Folder", default_case_path)
+        self.update_tree_case(path)
+        # if path:
+        #     path = str(path).replace("/", VAR_SEPARATOR)
+        #     if not str(path).endswith(VAR_SEPARATOR):
+        #         path += VAR_SEPARATOR
+        #     self.case_path = path
+        #     self.model.clear()
+        #     self.model.setHorizontalHeaderLabels(["Test Case"])
+        #     self.case_list.setModel(self.model)
+        #     self.create_tree(self.model, self.case_path)
+        #     config.set_str("Config", VAR_CONFIG_ITEM_CASE, path)
+        #
+        # self.clear_case_list()
+
+    def update_tree_case(self, path):
+        config = GetConfig()
         if path:
             path = str(path).replace("/", VAR_SEPARATOR)
             if not str(path).endswith(VAR_SEPARATOR):
@@ -479,40 +505,41 @@ class VatWindow(QMainWindow, Ui_MainWindow):
     def clear_case_list(self):
         self.run_case_list.clear()
 
-    def init_run_case_detail(self):
+    def init_case_status(self):
         head_list = ['Name', 'Round', 'Loop', 'Time', 'Result', 'Success Rate', 'Status']
         self.table_model.setHorizontalHeaderLabels(head_list)
         self.tableViewCaseRunDetail.setModel(self.table_model)
 
-    def add_test_case_list(self):
-        i = 0
-        for case in self.run_case_list:
-            case = case.split(VAR_SEPARATOR)[-1]
-            self.add_case_to_table(i, case)
-            i += 1
+    # def add_test_case_list(self):
+    #     i = 0
+    #     for case in self.run_case_list:
+    #         case = case.split(VAR_SEPARATOR)[-1]
+    #         self.add_case_to_table(i, case)
+    #         i += 1
+    #
+    # def add_case_to_table(self, row, name):
+    #     self.add_item_to_table(row, 0, name)
+    #
+    # def add_item_to_table(self, row, column, item):
+    #     self.table_model.setItem(row, column, QStandardItem(item))
+    #
+    # def remove_case_from_table(self, case):
+    #     row_count = self.table_model.rowCount()
+    #     case = case.split(VAR_SEPARATOR)[-1]
+    #     for count in range(row_count):
+    #         case_name = self.table_model.data(self.table_model.index(count, 0))
+    #         if case.__contains__(case_name):
+    #             self.table_model.removeRow(count)
+    #             break
 
-    def add_case_to_table(self, row, name):
-        self.add_item_to_table(row, 0, name)
-
-    def add_item_to_table(self, row, column, item):
-        self.table_model.setItem(row, column, QStandardItem(item))
-
-    def remove_case_from_table(self, case):
-        row_count = self.table_model.rowCount()
-        case = case.split(VAR_SEPARATOR)[-1]
-        for count in range(row_count):
-            case_name = self.table_model.data(self.table_model.index(count, 0))
-            if case.__contains__(case_name):
-                self.table_model.removeRow(count)
-                break
-
-    def run_test(self):
+    def action_run(self):
+        self.tabWidget.setCurrentIndex(0)
         self.control_status()
         self.clear_log()
         self.thread.case_list = self.run_case_list
         self.thread.start()
 
-    def stop_test(self):
+    def action_stop(self):
         # self.control_status(run=False)
         self.actionStop.setEnabled(False)
         self.thread.stop()
@@ -530,6 +557,7 @@ class VatWindow(QMainWindow, Ui_MainWindow):
         self.actionPython.setEnabled(not run)
         self.actionReport.setEnabled(not run)
         self.actionExit.setEnabled(not run)
+        self.actionSynchronize.setEnabled(not run)
 
     def output_written(self, text):
         cursor = self.textEditLog.textCursor()
