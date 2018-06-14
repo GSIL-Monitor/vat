@@ -21,21 +21,22 @@ except ModuleNotFoundError:
 
 from configparser import ConfigParser
 from PyQt5.QtWidgets import QApplication
-from PyQt5.QtWidgets import QMainWindow
+from PyQt5.QtWidgets import QMainWindow, QWidget, QTextEdit
 from PyQt5.QtGui import QStandardItemModel
 from PyQt5.QtGui import QStandardItem
 from PyQt5.QtGui import QTextCursor
 from PyQt5.QtGui import QDesktopServices
 from PyQt5.QtGui import QTextOption
 from PyQt5.QtCore import QUrl
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QRect, QFileInfo
 from PyQt5.QtCore import QThread
 from PyQt5.QtCore import QObject
 from PyQt5.QtCore import pyqtSignal
-from PyQt5.QtWidgets import QFileDialog
+from PyQt5.QtWidgets import QFileDialog, QAction, QMenu
 from PyQt5.QtWidgets import QMessageBox
 from PyQt5.QtCore import QCoreApplication
 from vatgui import Ui_MainWindow
+import textedit
 
 import ctypes
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("myappid")  # 设置任务栏图标
@@ -401,11 +402,86 @@ class VatWindow(QMainWindow, Ui_MainWindow):
         self.case_list.expanded.connect(self.case_tree_click)
         self.thread.signal_test_finish.connect(self.finish_test)
         self.thread.signal_case_info_update.connect(self.update_status)
+        self.case_list.customContextMenuRequested.connect(self.show_context_menu)
+        self.tabWidget.tabCloseRequested.connect(self.tab_close)
 
     def init_ui(self):
         self.actionStop.setEnabled(False)
         self.textEditLog.setReadOnly(True)
         self.textEditLog.setWordWrapMode(QTextOption.NoWrap)
+        # remove config tab
+        self.tabWidget.removeTab(1)
+        self.tabWidget.setTabsClosable(True)
+        # support right menu
+        self.case_list.setContextMenuPolicy(Qt.CustomContextMenu)
+
+    def show_context_menu(self, pos):
+        self.right_menu = QMenu()
+        self.right_open = QAction()
+        self.right_open.setObjectName("right_open")
+        self.right_open.setText("Open")
+        self.right_menu.addAction(self.right_open)
+        self.right_open.triggered.connect(self.right_action_open)
+
+        self.right_menu.exec_(self.case_list.mapToGlobal(pos))
+
+    def right_action_open(self):
+        index = self.case_list.selectionModel().currentIndex()
+        filename = self.case_path + self.get_all_parent_index(index)
+        self.create_edit_tab(filename)
+
+    def create_edit_tab(self, filename):
+        if os.path.isdir(filename):
+            return
+        if filename:
+            for i in range(self.tabWidget.count()):
+                textEdit = self.tabWidget.widget(i)
+                print(textEdit.windowTitle().title())
+                print(filename)
+                if textEdit.windowTitle().title().lower() == filename.split(VAR_SEPARATOR)[-1].lower():
+                    self.tabWidget.setCurrentWidget(textEdit)
+                    break
+            else:
+                self.load_file(filename)
+
+    def load_file(self, filename):
+        textEdit = textedit.TextEdit(filename)
+        try:
+            textEdit.load()
+        except EnvironmentError as e:
+            QMessageBox.warning(self,
+                    "Tabbed Text Editor -- Load Error",
+                    "Failed to load {0}: {1}".format(filename, e))
+            textEdit.close()
+            del textEdit
+        else:
+            self.tabWidget.addTab(textEdit, textEdit.windowTitle())
+            self.tabWidget.setCurrentWidget(textEdit)
+            textEdit.setWordWrapMode(QTextOption.NoWrap)
+
+    def tab_close(self, index):
+        if index == 0:
+            return
+        textEdit = self.tabWidget.currentWidget()
+        if textEdit is None or not isinstance(textEdit, QTextEdit):
+            return
+        textEdit.close()
+
+    def action_save(self):
+        textEdit = self.tabWidget.currentWidget()
+        if textEdit is None or not isinstance(textEdit, QTextEdit):
+            return True
+        try:
+            textEdit.save()
+            self.tabWidget.setTabText(self.tabWidget.currentIndex(),
+                                      QFileInfo(textEdit.filename).fileName())
+            return True
+        except EnvironmentError as e:
+            QMessageBox.warning(self,
+                                "Tabbed Text Editor -- Save Error",
+                                "Failed to save {0}: {1}".format(textEdit.filename, e))
+            return False
+        pass
 
     def action_synchronize(self):
         case_path = self.get_case_path()
@@ -428,17 +504,18 @@ class VatWindow(QMainWindow, Ui_MainWindow):
         text = "Version: {0}\nJRD COMMUNICATION Inc Copyright(c)2018\n".format(__version__)
         QMessageBox.about(self, "About", text)
 
-    def action_save(self):
-        to_save_content = self.textEditConfig.toPlainText()
-        # print(to_save_content)
-        config = codecs.open(VAR_CONFIG_PATH, 'w', 'utf-8')
-        config.write(to_save_content)
-        pass
+    # def action_save(self):
+    #     to_save_content = self.textEditConfig.toPlainText()
+    #     # print(to_save_content)
+    #     config = codecs.open(VAR_CONFIG_PATH, 'w', 'utf-8')
+    #     config.write(to_save_content)
+    #     pass
 
     def action_setting(self):
-        self.tabWidget.setCurrentIndex(1)
-        config_content = codecs.open(VAR_CONFIG_PATH, 'r', 'utf-8').read()
-        self.textEditConfig.setPlainText(config_content)
+        self.create_edit_tab(VAR_CONFIG_PATH)
+        # self.tabWidget.setCurrentIndex(1)
+        # config_content = codecs.open(VAR_CONFIG_PATH, 'r', 'utf-8').read()
+        # self.textEditConfig.setPlainText(config_content)
 
     def case_tree_click(self, index):
         self.case_list.resizeColumnToContents(0)
@@ -598,6 +675,14 @@ class VatWindow(QMainWindow, Ui_MainWindow):
             return self.get_all_parent(parent) + VAR_SEPARATOR + item.text()
         else:
             return item.text()
+
+    def get_all_parent_index(self, index):
+        parent = index.parent()
+        # print(parent.data())
+        if parent.data() is not None:
+            return self.get_all_parent_index(parent) + VAR_SEPARATOR + index.data()
+        else:
+            return index.data()
 
     def tree_item_check_child_changed(self, item):
         sibling_state = self.check_sibling(item)
