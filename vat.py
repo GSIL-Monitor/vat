@@ -41,7 +41,7 @@ import textedit
 import ctypes
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("myappid")  # 设置任务栏图标
 
-__version__ = "1.0.0.2"
+__version__ = "1.0.0.3"
 VAR_SEPARATOR = '\\'
 VAR_EXCEL_REPORT_NAME = 'MTBF_Test_Report'
 VAR_EXCEL_SUFFIX = '.xlsx'
@@ -434,11 +434,10 @@ class VatWindow(QMainWindow, Ui_MainWindow):
         if os.path.isdir(filename):
             return
         if filename:
-            for i in range(self.tabWidget.count()):
+            for i in range(1, self.tabWidget.count()):
                 textEdit = self.tabWidget.widget(i)
-                print(textEdit.windowTitle().title())
-                print(filename)
-                if textEdit.windowTitle().title().lower() == filename.split(VAR_SEPARATOR)[-1].lower():
+                # if textEdit.windowTitle().title().lower() == filename.split(VAR_SEPARATOR)[-1].lower():
+                if textEdit.filename == filename:
                     self.tabWidget.setCurrentWidget(textEdit)
                     break
             else:
